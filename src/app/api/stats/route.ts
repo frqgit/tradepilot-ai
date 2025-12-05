@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/db';
+import { Deal } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,13 +16,13 @@ export async function GET(request: NextRequest) {
     // Get all deals for the organization
     const deals = await prisma.deal.findMany({
       where: { organizationId: orgId },
-    });
+    }) as Deal[];
 
     // Calculate stats
     const totalDealsReviewed = deals.length;
-    const boughtDeals = deals.filter((d) => ['ACQUIRED', 'RECONDITIONING', 'LISTED', 'SOLD'].includes(d.status));
-    const soldDeals = deals.filter((d) => d.status === 'SOLD');
-    const activeDeals = deals.filter((d) => !['SOLD', 'LOST'].includes(d.status));
+    const boughtDeals = deals.filter((d: Deal) => ['ACQUIRED', 'RECONDITIONING', 'LISTED', 'SOLD'].includes(d.status));
+    const soldDeals = deals.filter((d: Deal) => d.status === 'SOLD');
+    const activeDeals = deals.filter((d: Deal) => !['SOLD', 'LOST'].includes(d.status));
 
     const totalDealsBought = boughtDeals.length;
     const totalDealsSold = soldDeals.length;
@@ -31,8 +32,8 @@ export async function GET(request: NextRequest) {
 
     // Average margin from sold deals
     const marginsFromSold = soldDeals
-      .filter((d) => d.actualPurchasePrice && d.actualSellPrice)
-      .map((d) => {
+      .filter((d: Deal) => d.actualPurchasePrice && d.actualSellPrice)
+      .map((d: Deal) => {
         const costs = (d.reconditioningCost || 0) + (d.otherCosts || 0);
         const profit = d.actualSellPrice! - d.actualPurchasePrice! - costs;
         return (profit / d.actualPurchasePrice!) * 100;
@@ -43,8 +44,8 @@ export async function GET(request: NextRequest) {
 
     // Total profit from sold deals
     const totalProfit = soldDeals
-      .filter((d) => d.actualPurchasePrice && d.actualSellPrice)
-      .reduce((sum, d) => {
+      .filter((d: Deal) => d.actualPurchasePrice && d.actualSellPrice)
+      .reduce((sum: number, d: Deal) => {
         const costs = (d.reconditioningCost || 0) + (d.otherCosts || 0);
         return sum + (d.actualSellPrice! - d.actualPurchasePrice! - costs);
       }, 0);

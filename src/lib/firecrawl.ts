@@ -1,22 +1,29 @@
-import FirecrawlApp from '@mendable/firecrawl-js';
+import Firecrawl from '@mendable/firecrawl-js';
+
+// Type for the legacy v1 client which has scrapeUrl
+type FirecrawlV1 = ReturnType<InstanceType<typeof Firecrawl>['v1']['scrapeUrl']> extends Promise<infer R> ? { scrapeUrl: (url: string, params?: any) => Promise<R> } : never;
 
 // Lazy initialization of Firecrawl to ensure env vars are loaded in serverless
-let firecrawlInstance: FirecrawlApp | null = null;
+let firecrawlInstance: Firecrawl | null = null;
 
-function getFirecrawl(): FirecrawlApp {
+function getFirecrawl(): Firecrawl {
   if (!firecrawlInstance) {
     const apiKey = process.env.FIRECRAWL_API_KEY;
     if (!apiKey) {
+      console.error('[Firecrawl] API key not found in environment');
       throw new Error('FIRECRAWL_API_KEY environment variable is not set');
     }
-    firecrawlInstance = new FirecrawlApp({ apiKey });
+    console.log('[Firecrawl] Initializing with API key:', apiKey.substring(0, 8) + '...');
+    firecrawlInstance = new Firecrawl({ apiKey });
   }
   return firecrawlInstance;
 }
 
 // Check if Firecrawl is properly configured
 export function isFirecrawlConfigured(): boolean {
-  return !!process.env.FIRECRAWL_API_KEY && process.env.FIRECRAWL_API_KEY !== 'your-firecrawl-api-key-here';
+  const configured = !!process.env.FIRECRAWL_API_KEY && process.env.FIRECRAWL_API_KEY !== 'your-firecrawl-api-key-here';
+  console.log('[Firecrawl] isConfigured:', configured, 'key exists:', !!process.env.FIRECRAWL_API_KEY);
+  return configured;
 }
 
 export interface CarListingData {
@@ -192,29 +199,38 @@ export async function scrapeCarListing(url: string): Promise<CarListingData> {
       throw new Error('Firecrawl API key not configured');
     }
 
-    console.log(`[Firecrawl] Scraping: ${url}`);
+    console.log(`[Firecrawl] Starting scrape: ${url}`);
 
     // Get the Firecrawl instance (lazy initialization)
     const firecrawl = getFirecrawl();
 
-    // Use Firecrawl's scrape method (v4.x SDK)
-    const response = await (firecrawl as any).scrapeUrl(url, {
+    // Use v1 client's scrapeUrl method for compatibility
+    console.log('[Firecrawl] Calling v1.scrapeUrl...');
+    const response = await firecrawl.v1.scrapeUrl(url, {
       formats: ['markdown'],
-      waitFor: 3000,
       timeout: 30000,
       onlyMainContent: true,
     });
+
+    console.log('[Firecrawl] Response received:', JSON.stringify(response).substring(0, 200));
 
     if (!response) {
       throw new Error('No response from Firecrawl');
     }
 
-    // Check for blocked/error responses (handle both v1 and v2 SDK formats)
-    if (response.error || !response.success) {
-      throw new Error(response.error || 'Firecrawl returned unsuccessful response');
+    // Check for error response
+    if ('error' in response && response.error) {
+      throw new Error(String(response.error));
     }
 
-    const markdown = response.markdown || response.content || response.html || '';
+    // Check for success field (v4 SDK returns success: true on success)
+    if ('success' in response && !response.success) {
+      throw new Error('Firecrawl returned unsuccessful response');
+    }
+
+    // Cast response to any to handle different SDK versions
+    const res = response as any;
+    const markdown = res.markdown || res.content || res.html || '';
     
     if (!markdown || markdown.length < 50) {
       throw new Error('Insufficient content scraped - site may be blocking');
@@ -225,7 +241,7 @@ export async function scrapeCarListing(url: string): Promise<CarListingData> {
 
     const listing: CarListingData = {
       url,
-      title: extractedData.title || response.metadata?.title || 'Unknown Listing',
+      title: extractedData.title || res.metadata?.title || 'Unknown Listing',
       price: extractedData.price ? Number(extractedData.price) : undefined,
       currency: extractedData.currency || 'AUD',
       make: extractedData.make,

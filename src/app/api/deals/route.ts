@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     const { sourceUrl, sourceSite, vehicle, askPrice } = validation.data;
 
     // Create vehicle and deal in a transaction
-    const deal = await prisma.$transaction(async (tx) => {
+    const deal = await prisma.$transaction(async (tx: typeof prisma) => {
       const newVehicle = await tx.vehicle.create({
         data: {
           organizationId: session.user.organizationId,

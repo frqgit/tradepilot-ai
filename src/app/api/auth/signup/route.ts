@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const passwordHash = await hash(password, 12);
 
     // Create organization and user in a transaction
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: typeof prisma) => {
       const organization = await tx.organization.create({
         data: {
           name: organizationName,
