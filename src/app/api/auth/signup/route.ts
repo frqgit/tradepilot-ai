@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { hash } from 'bcryptjs';
 import prisma from '@/lib/db';
 import { z } from 'zod';
+import { notifyAdminNewSignup } from '@/lib/sms';
 
 const signupSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -76,9 +77,16 @@ export async function POST(request: NextRequest) {
       return { user, organization };
     });
 
+    // Send SMS notification to admin (don't await - fire and forget)
+    notifyAdminNewSignup({
+      name: result.user.name || 'Unknown',
+      email: result.user.email,
+      organizationName: result.organization.name,
+    }).catch((err) => console.error('[Signup] SMS notification failed:', err));
+
     return NextResponse.json(
       {
-        message: 'Account created successfully',
+        message: 'Account created successfully. Awaiting admin approval.',
         user: {
           id: result.user.id,
           email: result.user.email,

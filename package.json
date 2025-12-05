@@ -29,6 +29,7 @@
     "react-dom": "^18.3.1",
     "stripe": "^14.22.0",
     "tailwind-merge": "^2.2.2",
+    "twilio": "^5.10.7",
     "zod": "^3.23.8"
   },
   "devDependencies": {
