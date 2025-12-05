@@ -1,0 +1,369 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== Users & Organizations ====================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  country   String   @default("AU")
+  timezone  String   @default("Australia/Sydney")
+  plan      Plan     @default(FREE)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users         User[]
+  vehicles      Vehicle[]
+  deals         Deal[]
+  contacts      Contact[]
+  dealSources   DealSource[]
+  subscription  Subscription?
+  usageRecords  UsageRecord[]
+
+  @@map("organizations")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  role         UserRole @default(TRADER)
+  status       UserStatus @default(PENDING) // NEW: Users need admin approval
+  isGlobalAdmin Boolean @default(false) @map("is_global_admin") // NEW: Super admin flag
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  notes         Note[]
+  aiPreferences AiPreferences?
+
+  @@map("users")
+}
+
+model AiPreferences {
+  id              String @id @default(cuid())
+  userId          String @unique @map("user_id")
+  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  targetMarginPercent  Float   @default(15) @map("target_margin_percent")
+  maxDaysInStock       Int     @default(45) @map("max_days_in_stock")
+  riskTolerance        RiskTolerance @default(MEDIUM) @map("risk_tolerance")
+  negotiationTone      NegotiationTone @default(POLITE) @map("negotiation_tone")
+
+  @@map("ai_preferences")
+}
+
+// ==================== Vehicles & Deals ====================
+
+model Vehicle {
+  id              String   @id @default(cuid())
+  organizationId  String   @map("organization_id")
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  sourceListingId String?  @map("source_listing_id")
+  vin             String?
+  year            Int
+  make            String
+  model           String
+  variant         String?
+  odometer        Int?
+  transmission    Transmission?
+  fuelType        FuelType? @map("fuel_type")
+  bodyType        BodyType? @map("body_type")
+  colour          String?
+  featuresJson    Json?    @map("features_json")
+  imageUrls       String[] @map("image_urls")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  deals           Deal[]
+
+  @@map("vehicles")
+}
+
+model DealSource {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  type       SourceType
+  name       String
+  urlPattern String?    @map("url_pattern")
+
+  createdAt  DateTime   @default(now()) @map("created_at")
+  deals      Deal[]
+
+  @@map("deal_sources")
+}
+
+model Deal {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  vehicleId      String       @map("vehicle_id")
+  vehicle        Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  sourceId       String?      @map("source_id")
+  source         DealSource?  @relation(fields: [sourceId], references: [id])
+
+  sourceUrl      String?      @map("source_url")
+  sourceSite     String?      @map("source_site")
+  status         DealStatus   @default(SOURCED)
+
+  // Pricing - asking & negotiated
+  askPrice              Float?  @map("ask_price")
+  negotiatedPrice       Float?  @map("negotiated_price")
+
+  // AI Estimations
+  estimatedFairValueLow   Float?  @map("estimated_fair_value_low")
+  estimatedFairValueHigh  Float?  @map("estimated_fair_value_high")
+  estimatedTargetSellPrice Float? @map("estimated_target_sell_price")
+  estimatedMargin         Float?  @map("estimated_margin")
+  estimatedDaysToSell     Int?    @map("estimated_days_to_sell")
+  riskScore               Float?  @map("risk_score")
+  aiRecommendation        AiRecommendation? @map("ai_recommendation")
+
+  // Actuals
+  actualPurchasePrice    Float?  @map("actual_purchase_price")
+  actualSellPrice        Float?  @map("actual_sell_price")
+  reconditioningCost     Float?  @map("reconditioning_cost")
+  otherCosts             Float?  @map("other_costs")
+
+  // Dates
+  acquiredAt             DateTime? @map("acquired_at")
+  listedAt               DateTime? @map("listed_at")
+  soldAt                 DateTime? @map("sold_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  dealContacts           DealContact[]
+  notes                  Note[]
+  aiInsights             AiInsight[]
+
+  @@map("deals")
+}
+
+model Contact {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name      String
+  phone     String?
+  email     String?
+  type      ContactType
+  notes     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  dealContacts DealContact[]
+
+  @@map("contacts")
+}
+
+model DealContact {
+  id        String      @id @default(cuid())
+  dealId    String      @map("deal_id")
+  deal      Deal        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  contactId String      @map("contact_id")
+  contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  role      ContactRole
+
+  @@unique([dealId, contactId])
+  @@map("deal_contacts")
+}
+
+model Note {
+  id       String @id @default(cuid())
+  dealId   String @map("deal_id")
+  deal     Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  authorId String @map("author_id")
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content  String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("notes")
+}
+
+model AiInsight {
+  id      String        @id @default(cuid())
+  dealId  String        @map("deal_id")
+  deal    Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type    AiInsightType
+  content String
+  model   String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("ai_insights")
+}
+
+// ==================== Billing ====================
+
+model Subscription {
+  id                   String       @id @default(cuid())
+  organizationId       String       @unique @map("organization_id")
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  stripeCustomerId     String?      @map("stripe_customer_id")
+  stripeSubscriptionId String?      @map("stripe_subscription_id")
+  plan                 Plan         @default(FREE)
+  status               SubscriptionStatus @default(ACTIVE)
+  renewalDate          DateTime?    @map("renewal_date")
+
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  @@map("subscriptions")
+}
+
+// Usage tracking for rate limiting
+model UsageRecord {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  date           DateTime     @db.Date  // The day of usage
+  analysisCount  Int          @default(0) @map("analysis_count")
+  
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@unique([organizationId, date])
+  @@map("usage_records")
+}
+
+// ==================== Enums ====================
+
+enum Plan {
+  FREE           // 3 analyses/day - Free
+  BASIC          // 10 analyses/day - $5/month
+  PREMIUM        // 100 analyses/day - $10/month
+  BUSINESS       // Unlimited - $30/month
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  TRADER
+  VIEWER
+}
+
+enum DealStatus {
+  SOURCED
+  CONTACTED
+  OFFERED
+  ACQUIRED
+  RECONDITIONING
+  LISTED
+  SOLD
+  LOST
+}
+
+enum AiRecommendation {
+  STRONG_BUY
+  MAYBE
+  SKIP
+}
+
+enum SourceType {
+  MANUAL
+  CSV_IMPORT
+  CARSALES
+  FACEBOOK_MARKETPLACE
+  GUMTREE
+  AUTOTRADER
+  OTHER
+}
+
+enum ContactType {
+  SELLER
+  BUYER
+  DEALER
+  OTHER
+}
+
+enum ContactRole {
+  SELLER
+  BUYER
+}
+
+enum Transmission {
+  AUTOMATIC
+  MANUAL
+  CVT
+  DCT
+  OTHER
+}
+
+enum FuelType {
+  PETROL
+  DIESEL
+  HYBRID
+  ELECTRIC
+  LPG
+  OTHER
+}
+
+enum BodyType {
+  SEDAN
+  HATCHBACK
+  SUV
+  WAGON
+  UTE
+  COUPE
+  CONVERTIBLE
+  VAN
+  OTHER
+}
+
+enum RiskTolerance {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum NegotiationTone {
+  POLITE
+  FIRM
+  URGENT
+  CASUAL
+}
+
+enum UserStatus {
+  PENDING    // Awaiting admin approval
+  APPROVED   // Can access the app
+  REJECTED   // Access denied
+  SUSPENDED  // Temporarily disabled
+}
+
+enum AiInsightType {
+  SUMMARY
+  RECOMMENDATION
+  RISK_ANALYSIS
+  PRICING_EXPLANATION
+  MESSAGE_TEMPLATE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  PAUSED
+}
