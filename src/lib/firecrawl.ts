@@ -1,9 +1,18 @@
 import FirecrawlApp from '@mendable/firecrawl-js';
 
-// Initialize Firecrawl with API key
-const firecrawl = new FirecrawlApp({
-  apiKey: process.env.FIRECRAWL_API_KEY || '',
-});
+// Lazy initialization of Firecrawl to ensure env vars are loaded in serverless
+let firecrawlInstance: FirecrawlApp | null = null;
+
+function getFirecrawl(): FirecrawlApp {
+  if (!firecrawlInstance) {
+    const apiKey = process.env.FIRECRAWL_API_KEY;
+    if (!apiKey) {
+      throw new Error('FIRECRAWL_API_KEY environment variable is not set');
+    }
+    firecrawlInstance = new FirecrawlApp({ apiKey });
+  }
+  return firecrawlInstance;
+}
 
 // Check if Firecrawl is properly configured
 export function isFirecrawlConfigured(): boolean {
@@ -185,40 +194,29 @@ export async function scrapeCarListing(url: string): Promise<CarListingData> {
 
     console.log(`[Firecrawl] Scraping: ${url}`);
 
-    // Use Firecrawl's scrape with advanced options for protected sites
-    const response = await firecrawl.scrape(url, {
-      formats: ['markdown', 'html'],
-      // Wait longer for JS-heavy sites
-      waitFor: 5000,
-      timeout: 60000, // 60 second timeout
-      // Mobile viewport can sometimes bypass restrictions
-      mobile: false,
-      // Remove ads and popups
-      blockAds: true,
-      // Skip TLS verification for some sites
-      skipTlsVerification: true,
-      // Only get main content
+    // Get the Firecrawl instance (lazy initialization)
+    const firecrawl = getFirecrawl();
+
+    // Use Firecrawl's scrape method (v4.x SDK)
+    const response = await (firecrawl as any).scrapeUrl(url, {
+      formats: ['markdown'],
+      waitFor: 3000,
+      timeout: 30000,
       onlyMainContent: true,
-      // Actions to simulate real user behavior
-      actions: [
-        { type: 'wait', milliseconds: 2000 },
-        { type: 'scroll', direction: 'down' },
-        { type: 'wait', milliseconds: 1000 },
-      ],
-    }) as any;
+    });
 
     if (!response) {
       throw new Error('No response from Firecrawl');
     }
 
-    // Check for blocked/error responses
-    if (response.error) {
-      throw new Error(response.error);
+    // Check for blocked/error responses (handle both v1 and v2 SDK formats)
+    if (response.error || !response.success) {
+      throw new Error(response.error || 'Firecrawl returned unsuccessful response');
     }
 
-    const markdown = response.markdown || response.html || '';
+    const markdown = response.markdown || response.content || response.html || '';
     
-    if (!markdown || markdown.length < 100) {
+    if (!markdown || markdown.length < 50) {
       throw new Error('Insufficient content scraped - site may be blocking');
     }
 
